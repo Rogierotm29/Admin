@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+/* --- Global look & feel --- */
+:root {
+  --bg: #0b1220;
+  --card: #0f172a;
+  --stroke: #1e293b;
+  --text: #e2e8f0;
+  --subtext: #94a3b8;
+}
+
+html, body, #root { height: 100%; }
+body {
+  @apply antialiased;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* contenedor de página */
+.container-app { @apply max-w-6xl mx-auto px-4 py-6; }
+
+/* tarjeta bonita */
+.card {
+  @apply rounded-2xl p-5 shadow-xl border;
+  background: var(--card);
+  border-color: var(--stroke);
+  color: var(--text);
+}
+
+/* subtítulo gris */
+.subtext { color: var(--subtext); }
+
+/* tabs */
+.tab {
+  @apply px-3 py-2 rounded-lg text-sm font-medium border;
+  border-color: var(--stroke);
+  color: var(--subtext);
+}
+.tab--active {
+  background: #1f7dbf;
+  color: white;
+  border-color: transparent;
+}
