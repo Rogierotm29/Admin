@@ -1,10 +1,22 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, Legend
 } from "recharts";
-import { colors } from "./ui/colors";
 
-// ===== Tipos =====
+/* Paleta (ajústala si tienes guía oficial) */
+const colors = {
+  primary: "#1f7dbf",
+  primaryDark: "#155a85",
+  accent: "#26a69a",
+  warning: "#f59e0b",
+  bg: "#0b1220",
+  card: "#0f172a",
+  stroke: "#1e293b",
+  text: "#e2e8f0",
+  subtext: "#94a3b8",
+};
+
+/* ===== Tipos ===== */
 type Servicio = { id: string; nombre: string; cantidad: number };
 type Rango = { inicio: string; fin: string };
 type Reserva = {
@@ -17,7 +29,7 @@ type Reserva = {
   nombres?: string[];
 };
 
-// ===== Datos mock =====
+/* ===== Mock data (cámbialo por tu API) ===== */
 const initialPending: Reserva[] = [
   {
     id: "r1",
@@ -59,20 +71,25 @@ const catalogoServicios = [
   { id: "s5", nombre: "Albergue" },
 ];
 
-// ===== Utils UI =====
+/* ===== Utils UI ===== */
 function clsx(...tokens: Array<string | false | null | undefined>) {
   return tokens.filter(Boolean).join(" ");
 }
 function Card(props: React.PropsWithChildren<{ className?: string }>) {
   return (
-    <div className={clsx("card", props.className)}>{props.children}</div>
+    <div
+      className={clsx("rounded-2xl p-5 shadow-xl border", props.className)}
+      style={{ background: colors.card, borderColor: colors.stroke, color: colors.text }}
+    >
+      {props.children}
+    </div>
   );
 }
 function SectionTitle({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
     <div className="mb-4">
       <h2 className="text-xl font-semibold">{title}</h2>
-      {subtitle && <p className="text-sm subtext">{subtitle}</p>}
+      {subtitle && <p className="text-sm" style={{ color: colors.subtext }}>{subtitle}</p>}
     </div>
   );
 }
@@ -99,12 +116,15 @@ function Button(
   );
 }
 
-// ===== Reservas =====
-function ReservasPage() {
+/* ===== 1) Página Reservas ===== */
+function ReservasPage({ defaultList = "pendientes" }: { defaultList?: "pendientes" | "confirmadas" }) {
   const [pending, setPending] = useState<Reserva[]>(initialPending);
   const [confirmed, setConfirmed] = useState<Reserva[]>(initialConfirmed);
-  const [active, setActive] = useState<"pendientes" | "confirmadas">("pendientes");
+  const [active, setActive] = useState<"pendientes" | "confirmadas">(defaultList);
   const [detalle, setDetalle] = useState<null | { tipo: "P" | "C"; id: string }>(null);
+
+  // sincroniza si cambiamos de pestaña (prop)
+  useEffect(() => { setActive(defaultList); }, [defaultList]);
 
   const lista = active === "pendientes" ? pending : confirmed;
 
@@ -128,9 +148,12 @@ function ReservasPage() {
   }, [detalle, pending, confirmed]);
 
   return (
-    <div className="grid gap-6 md:grid-cols-3">
+    <div
+      className="grid gap-6 md:grid-cols-[520px,1fr] xl:grid-cols-[580px,1fr]"
+      style={{ color: colors.text }}
+    >
       {/* Lista */}
-      <div className="md:col-span-1 space-y-4">
+      <div className="space-y-4">
         <SectionTitle title="Reservas" subtitle="Pendientes y confirmadas" />
         <div className="flex gap-2 mb-2">
           <Button tone={active === "pendientes" ? "warning" : "ghost"} onClick={() => setActive("pendientes")}>
@@ -140,45 +163,46 @@ function ReservasPage() {
             Confirmadas ({confirmed.length})
           </Button>
         </div>
-        <Card>
+
+        <Card className="p-4">
           <div className="space-y-3">
             {lista.map(r => (
-              <div key={r.id} className="border rounded-xl p-3" style={{ borderColor: colors.stroke }}>
-                <div className="flex items-center justify-between">
-                  <div>
+              <div key={r.id} className="border rounded-xl p-4" style={{ borderColor: colors.stroke }}>
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="min-w-[220px]">
                     <p className="font-semibold">{r.nombre} · {r.personas} personas</p>
-                    <p className="text-xs subtext">
+                    <p className="text-xs" style={{ color: colors.subtext }}>
                       {new Date(r.rango.inicio).toLocaleDateString()} – {new Date(r.rango.fin).toLocaleDateString()}
                     </p>
                     {!!r.intereses?.length && (
-                      <p className="text-xs mt-1 subtext">Intereses: {r.intereses.join(", ")}</p>
+                      <p className="text-xs mt-1" style={{ color: colors.subtext }}>Intereses: {r.intereses.join(", ")}</p>
                     )}
                   </div>
                   <div className="flex gap-2">
                     {active === "pendientes" ? (
                       <>
-                        <Button tone="warning" onClick={() => setDetalle({ tipo: "P", id: r.id })}>Detalles</Button>
-                        <Button tone="accent" onClick={() => aceptar(r.id)}>Aceptar</Button>
-                        <Button tone="ghost" onClick={() => rechazar(r.id)}>Rechazar</Button>
+                        <Button className="whitespace-nowrap" tone="warning" onClick={() => setDetalle({ tipo: "P", id: r.id })}>Detalles</Button>
+                        <Button className="whitespace-nowrap" tone="accent" onClick={() => aceptar(r.id)}>Aceptar</Button>
+                        <Button className="whitespace-nowrap" tone="ghost" onClick={() => rechazar(r.id)}>Rechazar</Button>
                       </>
                     ) : (
-                      <Button tone="accent" onClick={() => setDetalle({ tipo: "C", id: r.id })}>Ver detalles</Button>
+                      <Button className="whitespace-nowrap" tone="accent" onClick={() => setDetalle({ tipo: "C", id: r.id })}>Ver detalles</Button>
                     )}
                   </div>
                 </div>
               </div>
             ))}
-            {lista.length === 0 && <p className="text-sm subtext">No hay elementos en esta lista.</p>}
+            {lista.length === 0 && <p className="text-sm" style={{ color: colors.subtext }}>No hay elementos en esta lista.</p>}
           </div>
         </Card>
       </div>
 
       {/* Detalle */}
-      <div className="md:col-span-2 space-y-4">
+      <div className="space-y-4">
         <SectionTitle title="Detalle de la reservación" subtitle="Gestiona personas y servicios" />
         <Card>
           {!detalleReserva ? (
-            <p className="subtext">Selecciona una reserva para ver y editar sus detalles.</p>
+            <p style={{ color: colors.subtext }}>Selecciona una reserva para ver y editar sus detalles.</p>
           ) : (
             <ReservaDetalle
               data={detalleReserva}
@@ -221,73 +245,74 @@ function ReservaDetalle({ data, onUpdate }: { data: Reserva; onUpdate: (d: Reser
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-2">
+      {/* Cabecera + botón guardar */}
+      <div className="grid gap-4 md:grid-cols-[1fr,auto]">
         <div>
           <h3 className="font-semibold mb-1">{data.nombre}</h3>
-          <p className="text-sm subtext">
+          <p className="text-sm" style={{ color: colors.subtext }}>
             {new Date(data.rango.inicio).toLocaleDateString()} – {new Date(data.rango.fin).toLocaleDateString()}
           </p>
         </div>
-        <div className="flex items-end justify-end gap-2">
+        <div className="flex items-start md:items-end justify-end gap-2">
           <Button tone="primary" onClick={save}>Guardar cambios</Button>
         </div>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <div>
-          <SectionTitle title="Personas" subtitle="Añade o elimina asistentes" />
-          <div className="space-y-2">
-            {personas.map((p, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <input
-                  value={p}
-                  onChange={e => setPersonas(arr => arr.map((x, idx) => idx === i ? e.target.value : x))}
-                  className="flex-1 rounded-lg px-3 py-2 text-sm bg-transparent border"
-                  style={{ borderColor: colors.stroke, color: colors.text }}
-                />
-                <Button tone="ghost" onClick={() => removePersona(i)}>−</Button>
-              </div>
-            ))}
-            <Button tone="ghost" onClick={addPersona}>Agregar persona</Button>
-          </div>
+      {/* Personas (arriba) */}
+      <div>
+        <SectionTitle title="Personas" subtitle="Añade o elimina asistentes" />
+        <div className="space-y-2">
+          {personas.map((p, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <input
+                value={p}
+                onChange={e => setPersonas(arr => arr.map((x, idx) => idx === i ? e.target.value : x))}
+                className="flex-1 rounded-lg px-3 py-2 text-sm bg-transparent border"
+                style={{ borderColor: colors.stroke, color: colors.text }}
+              />
+              <Button tone="ghost" onClick={() => removePersona(i)}>−</Button>
+            </div>
+          ))}
+          <Button tone="ghost" onClick={addPersona}>Agregar persona</Button>
         </div>
+      </div>
 
-        <div>
-          <SectionTitle title="Servicios de la reservación" subtitle="Selecciona y asigna cantidades" />
-          <div className="space-y-3">
-            {servicios.map((sv, i) => (
-              <div key={i} className="grid grid-cols-12 gap-2">
-                <select
-                  className="col-span-7 rounded-lg px-3 py-2 text-sm bg-transparent border"
-                  style={{ borderColor: colors.stroke, color: colors.text }}
-                  value={sv.id}
-                  onChange={e => changeServicioId(i, e.target.value)}
-                >
-                  <option value="" disabled style={{ color: "#000" }}>Selecciona servicio</option>
-                  {catalogoServicios.map(c => (
-                    <option key={c.id} value={c.id} style={{ color: "#000" }}>{c.nombre}</option>
-                  ))}
-                </select>
-                <input
-                  type="number"
-                  min={1}
-                  className="col-span-3 rounded-lg px-3 py-2 text-sm bg-transparent border"
-                  style={{ borderColor: colors.stroke, color: colors.text }}
-                  value={sv.cantidad}
-                  onChange={e => changeServicioQty(i, Number(e.target.value))}
-                />
-                <Button className="col-span-2" tone="ghost" onClick={() => removeServicio(i)}>Eliminar</Button>
-              </div>
-            ))}
-            <Button tone="ghost" onClick={addServicio}>Agregar servicio</Button>
-          </div>
+      {/* Servicios (abajo) */}
+      <div>
+        <SectionTitle title="Servicios de la reservación" subtitle="Selecciona y asigna cantidades" />
+        <div className="space-y-3">
+          {servicios.map((sv, i) => (
+            <div key={i} className="grid grid-cols-12 gap-2">
+              <select
+                className="col-span-7 rounded-lg px-3 py-2 text-sm bg-transparent border"
+                style={{ borderColor: colors.stroke, color: colors.text }}
+                value={sv.id}
+                onChange={e => changeServicioId(i, e.target.value)}
+              >
+                <option value="" disabled style={{ color: "#000" }}>Selecciona servicio</option>
+                {catalogoServicios.map(c => (
+                  <option key={c.id} value={c.id} style={{ color: "#000" }}>{c.nombre}</option>
+                ))}
+              </select>
+              <input
+                type="number"
+                min={1}
+                className="col-span-3 rounded-lg px-3 py-2 text-sm bg-transparent border"
+                style={{ borderColor: colors.stroke, color: colors.text }}
+                value={sv.cantidad}
+                onChange={e => changeServicioQty(i, Number(e.target.value))}
+              />
+              <Button className="col-span-2 whitespace-nowrap" tone="ghost" onClick={() => removeServicio(i)}>Eliminar</Button>
+            </div>
+          ))}
+          <Button tone="ghost" onClick={addServicio}>Agregar servicio</Button>
         </div>
       </div>
     </div>
   );
 }
 
-// ===== Dashboard =====
+/* ===== 2) Dashboard ===== */
 function DashboardPage() {
   const reservasMes = [
     { mes: "Ene", total: 32 }, { mes: "Feb", total: 27 }, { mes: "Mar", total: 41 }, { mes: "Abr", total: 38 },
@@ -310,11 +335,13 @@ function DashboardPage() {
     { nombre: "Asesoría Legal", interesados: 18 },
   ];
 
+  const chartBox = { height: 260 };
+
   return (
     <div className="grid gap-6 md:grid-cols-2">
-      <div className="card">
+      <Card>
         <SectionTitle title="Reservas mensuales" subtitle="Histograma (total por mes)" />
-        <div className="w-full" style={{ height: 260 }}>
+        <div className="w-full" style={chartBox}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={reservasMes}>
               <CartesianGrid stroke={colors.stroke} />
@@ -326,11 +353,11 @@ function DashboardPage() {
             </BarChart>
           </ResponsiveContainer>
         </div>
-      </div>
+      </Card>
 
-      <div className="card">
+      <Card>
         <SectionTitle title="Pendientes vs Confirmadas" subtitle="Estado actual" />
-        <div className="w-full" style={{ height: 260 }}>
+        <div className="w-full" style={chartBox}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={estadoActual}>
               <CartesianGrid stroke={colors.stroke} />
@@ -342,11 +369,11 @@ function DashboardPage() {
             </BarChart>
           </ResponsiveContainer>
         </div>
-      </div>
+      </Card>
 
-      <div className="card">
+      <Card>
         <SectionTitle title="Servicios más usados / mensuales" />
-        <div className="w-full" style={{ height: 260 }}>
+        <div className="w-full" style={chartBox}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={serviciosMasUsados}>
               <CartesianGrid stroke={colors.stroke} />
@@ -358,11 +385,11 @@ function DashboardPage() {
             </BarChart>
           </ResponsiveContainer>
         </div>
-      </div>
+      </Card>
 
-      <div className="card">
+      <Card>
         <SectionTitle title="Servicios de interés" subtitle="Encuestas / solicitudes" />
-        <div className="w-full" style={{ height: 260 }}>
+        <div className="w-full" style={chartBox}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={serviciosInteres}>
               <CartesianGrid stroke={colors.stroke} />
@@ -374,17 +401,17 @@ function DashboardPage() {
             </BarChart>
           </ResponsiveContainer>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
 
-// ===== Confirmadas (atajo) =====
+/* ===== 3) Página Confirmadas ===== */
 function ConfirmadasPage() {
-  return <ReservasPage />;
+  return <ReservasPage defaultList="confirmadas" />;
 }
 
-// ===== Shell / Layout =====
+/* ===== Shell / Layout ===== */
 const tabs = [
   { key: "dashboard", label: "Dashboard" },
   { key: "reservas", label: "Reservas" },
@@ -398,17 +425,22 @@ export default function AdminCaritasApp() {
   return (
     <div style={{ background: colors.bg, minHeight: "100vh" }}>
       <header className="sticky top-0 z-10 border-b" style={{ background: colors.card, borderColor: colors.stroke }}>
-        <div className="container-app !py-3 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
             <div className="w-3 h-6 rounded-sm" style={{ background: colors.primary }} />
-            <h1 className="font-semibold">Cáritas – Panel Admin</h1>
+            <h1 className="font-semibold" style={{ color: colors.text }}>Cáritas – Panel Admin</h1>
           </div>
           <nav className="flex items-center gap-1">
             {tabs.map(t => (
               <button
                 key={t.key}
                 onClick={() => setTab(t.key)}
-                className={`tab ${tab === t.key ? "tab--active" : ""}`}
+                className={clsx("px-3 py-2 rounded-lg text-sm font-medium border")}
+                style={{
+                  color: tab === t.key ? "#fff" : colors.subtext,
+                  background: tab === t.key ? colors.primary : "transparent",
+                  borderColor: tab === t.key ? "transparent" : colors.stroke,
+                }}
               >
                 {t.label}
               </button>
@@ -417,16 +449,14 @@ export default function AdminCaritasApp() {
         </div>
       </header>
 
-      <main className="container-app">
+      <main className="max-w-7xl mx-auto px-4 py-6">
         {tab === "dashboard" && <DashboardPage />}
         {tab === "reservas" && <ReservasPage />}
         {tab === "confirmadas" && <ConfirmadasPage />}
       </main>
 
-      <footer className="border-t mt-8 px-4 py-6 text-xs" style={{ borderColor: colors.stroke }}>
-        <div className="container-app !px-0 subtext">
-          UI de ejemplo para integrar con tu API (React + Tailwind + Recharts).
-        </div>
+      <footer className="border-t mt-8 px-4 py-6 text-xs" style={{ borderColor: colors.stroke, color: colors.subtext }}>
+        <div className="max-w-7xl mx-auto">UI de ejemplo para integrar con tu API (React + Tailwind + Recharts).</div>
       </footer>
     </div>
   );
