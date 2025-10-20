@@ -19,7 +19,7 @@ const colors = {
 
 /* ===== Tipos ===== */
 type Servicio = { id: string; nombre: string; cantidad: number };
-type Rango = { inicio: string; fin: string };
+type Rango = { inicio: string | null; fin: string | null };
 type Reserva = {
   id: string;
   nombre: string;
@@ -30,39 +30,8 @@ type Reserva = {
   nombres?: string[];
 };
 
-/* ===== Mock data (cámbialo por tu API) ===== */
-const initialPending: Reserva[] = [
-  {
-    id: "r1",
-    nombre: "Familia López",
-    rango: { inicio: "2025-10-10", fin: "2025-10-20" },
-    personas: 5,
-    intereses: ["Lavar", "Transporte"],
-    servicios: [
-      { id: "s1", nombre: "Lavandería", cantidad: 1 },
-      { id: "s2", nombre: "Transporte", cantidad: 1 },
-    ],
-  },
-  {
-    id: "r2",
-    nombre: "Grupo Jóvenes",
-    rango: { inicio: "2025-11-01", fin: "2025-11-05" },
-    personas: 12,
-    intereses: ["Alimentos"],
-    servicios: [{ id: "s3", nombre: "Comedor", cantidad: 2 }],
-  },
-];
-
-const initialConfirmed: Reserva[] = [
-  {
-    id: "c1",
-    nombre: "Sr. Martínez",
-    rango: { inicio: "2025-10-03", fin: "2025-10-04" },
-    personas: 1,
-    intereses: ["Consulta"],
-    servicios: [{ id: "s4", nombre: "Trabajo Social", cantidad: 1 }],
-  },
-];
+// Start empty; we'll load from API
+// we'll pass initial lists via props from the top-level component
 
 const catalogoServicios = [
   { id: "s1", nombre: "Lavandería" },
@@ -118,9 +87,10 @@ function Button(
 }
 
 /* ===== 1) Página Reservas ===== */
-function ReservasPage({ defaultList = "pendientes" }: { defaultList?: "pendientes" | "confirmadas" }) {
-  const [pending, setPending] = useState<Reserva[]>(initialPending);
-  const [confirmed, setConfirmed] = useState<Reserva[]>(initialConfirmed);
+function ReservasPage({ defaultList = "pendientes", initialPendingList = [], initialConfirmedList = [] }:
+  { defaultList?: "pendientes" | "confirmadas"; initialPendingList?: Reserva[]; initialConfirmedList?: Reserva[] }) {
+  const [pending, setPending] = useState<Reserva[]>(initialPendingList);
+  const [confirmed, setConfirmed] = useState<Reserva[]>(initialConfirmedList);
   const [active, setActive] = useState<"pendientes" | "confirmadas">(defaultList);
   const [detalle, setDetalle] = useState<null | { tipo: "P" | "C"; id: string }>(null);
 
@@ -173,7 +143,7 @@ function ReservasPage({ defaultList = "pendientes" }: { defaultList?: "pendiente
                   <div className="min-w-[220px]">
                     <p className="font-semibold">{r.nombre} · {r.personas} personas</p>
                     <p className="text-xs" style={{ color: colors.subtext }}>
-                      {new Date(r.rango.inicio).toLocaleDateString()} – {new Date(r.rango.fin).toLocaleDateString()}
+                      {formatDate(r.rango.inicio)} – {formatDate(r.rango.fin)}
                     </p>
                     {!!r.intereses?.length && (
                       <p className="text-xs mt-1" style={{ color: colors.subtext }}>Intereses: {r.intereses.join(", ")}</p>
@@ -251,7 +221,7 @@ function ReservaDetalle({ data, onUpdate }: { data: Reserva; onUpdate: (d: Reser
         <div>
           <h3 className="font-semibold mb-1">{data.nombre}</h3>
           <p className="text-sm" style={{ color: colors.subtext }}>
-            {new Date(data.rango.inicio).toLocaleDateString()} – {new Date(data.rango.fin).toLocaleDateString()}
+            {formatDate(data.rango.inicio)} – {formatDate(data.rango.fin)}
           </p>
         </div>
         <div className="flex items-start md:items-end justify-end gap-2">
@@ -311,6 +281,15 @@ function ReservaDetalle({ data, onUpdate }: { data: Reserva; onUpdate: (d: Reser
       </div>
     </div>
   );
+}
+
+function formatDate(d: string | null | undefined) {
+  if (!d) return "—";
+  try {
+    return new Date(d).toLocaleDateString();
+  } catch {
+    return d;
+  }
 }
 
 /* ===== 2) Dashboard ===== */
@@ -491,6 +470,41 @@ type TabKey = typeof tabs[number]["key"];
 
 export default function AdminCaritasApp() {
   const [tab, setTab] = useState<TabKey>("dashboard");
+  const [pendingFromApi, setPendingFromApi] = useState<Reserva[]>([]);
+  const [confirmedFromApi, setConfirmedFromApi] = useState<Reserva[]>([]);
+  const [loadingReservations, setLoadingReservations] = useState<boolean>(false);
+  const [reservationsError, setReservationsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      setLoadingReservations(true);
+      setReservationsError(null);
+      try {
+        const data = await dashboardService.getReservations();
+        if (!mounted) return;
+        // Map API shape to Reserva
+        const mapItem = (it: import("./ControllerDashboard").ReservationItem): Reserva => ({
+          id: it.reservationId,
+          nombre: it.userFullName,
+          rango: { inicio: it.startDate || null, fin: it.endDate || null },
+          personas: it.peopleCount,
+          servicios: [],
+        });
+
+        setPendingFromApi(data.pendingReservation.map(mapItem));
+        setConfirmedFromApi(data.activeReservations.map(mapItem));
+      } catch (err) {
+        console.error(err);
+        setReservationsError("No se pudieron cargar las reservas");
+      } finally {
+        setLoadingReservations(false);
+      }
+    };
+
+    load();
+    return () => { mounted = false; };
+  }, []);
 
   return (
     <div style={{ background: colors.bg, minHeight: "100vh" }}>
@@ -521,7 +535,17 @@ export default function AdminCaritasApp() {
 
       <main className="max-w-7xl mx-auto px-4 py-6">
         {tab === "dashboard" && <DashboardPage />}
-        {tab === "reservas" && <ReservasPage />}
+        {tab === "reservas" && (
+          <>
+            {loadingReservations ? (
+              <Card><p style={{ color: colors.subtext }}>Cargando reservas...</p></Card>
+            ) : reservationsError ? (
+              <Card><p style={{ color: colors.subtext }}>{reservationsError}</p></Card>
+            ) : (
+              <ReservasPage initialPendingList={pendingFromApi} initialConfirmedList={confirmedFromApi} />
+            )}
+          </>
+        )}
         {tab === "confirmadas" && <ConfirmadasPage />}
       </main>
 
