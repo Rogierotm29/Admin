@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, Legend
 } from "recharts";
+import { dashboardService } from "./ControllerDashboard";
 
 /* Paleta (ajústala si tienes guía oficial) */
 const colors = {
@@ -95,7 +96,7 @@ function SectionTitle({ title, subtitle }: { title: string; subtitle?: string })
 }
 function Button(
   { children, onClick, tone = "primary", className }:
-  { children: React.ReactNode; onClick?: () => void; tone?: "primary" | "accent" | "warning" | "ghost"; className?: string }
+    { children: React.ReactNode; onClick?: () => void; tone?: "primary" | "accent" | "warning" | "ghost"; className?: string }
 ) {
   const tones: Record<string, string> = {
     primary: colors.primary,
@@ -313,32 +314,98 @@ function ReservaDetalle({ data, onUpdate }: { data: Reserva; onUpdate: (d: Reser
 }
 
 /* ===== 2) Dashboard ===== */
+// Tipos para mayor claridad
+interface ReservaMes {
+  mes: string;
+  total: number;
+}
+
+interface EstadoActual {
+  label: string;
+  value: number;
+}
+
+interface ServicioMasUsado {
+  nombre: string;
+  usos: number;
+}
+
+interface ServicioInteres {
+  nombre: string;
+  interesados: number;
+}
+
 function DashboardPage() {
-  const reservasMes = [
-    { mes: "Ene", total: 32 }, { mes: "Feb", total: 27 }, { mes: "Mar", total: 41 }, { mes: "Abr", total: 38 },
-    { mes: "May", total: 29 }, { mes: "Jun", total: 44 }, { mes: "Jul", total: 35 }, { mes: "Ago", total: 50 },
-    { mes: "Sep", total: 47 }, { mes: "Oct", total: 52 }, { mes: "Nov", total: 39 }, { mes: "Dic", total: 46 },
-  ];
-  const estadoActual = [
-    { label: "Pendientes", value: 7 },
-    { label: "Confirmadas", value: 21 },
-  ];
-  const serviciosMasUsados = [
-    { nombre: "Comedor", usos: 72 },
-    { nombre: "Transporte", usos: 41 },
-    { nombre: "Lavandería", usos: 27 },
-    { nombre: "Albergue", usos: 19 },
-  ];
-  const serviciosInteres = [
-    { nombre: "Psicología", interesados: 34 },
-    { nombre: "Odontología", interesados: 21 },
-    { nombre: "Asesoría Legal", interesados: 18 },
-  ];
+  // 👇 Tipamos explícitamente los estados
+  const [reservasMes, setReservasMes] = useState<ReservaMes[]>([]);
+  const [estadoActual, setEstadoActual] = useState<EstadoActual[]>([]);
+  const [serviciosMasUsados, setServiciosMasUsados] = useState<ServicioMasUsado[]>([]);
+  const [serviciosInteres, setServiciosInteres] = useState<ServicioInteres[]>([]);
 
   const chartBox = { height: 260 };
 
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      try {
+        const [
+          reservationsHistogram,
+          personsHistogram,
+          reservationsState,
+          serviceReservationsTypeCount,
+        ] = await Promise.all([
+          dashboardService.getReservationsHistogram(),
+          dashboardService.getPersonsHistogram(),
+          dashboardService.getReservationsStateCount(),
+          dashboardService.getServiceReservationsTypeCount(),
+        ]);
+
+        const meses = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+
+        // --- 1️⃣ Reservas mensuales ---
+        const reservasMesData: ReservaMes[] = reservationsHistogram.frequencies.map(
+          (total: number, i: number) => ({
+            mes: meses[i],
+            total,
+          })
+        );
+        setReservasMes(reservasMesData);
+
+        // --- 2️⃣ Pendientes vs Confirmadas ---
+        const pendientes = reservationsState.pending.reduce((a: number, b: number) => a + b, 0);
+        const confirmadas = reservationsState.active.reduce((a: number, b: number) => a + b, 0);
+        setEstadoActual([
+          { label: "Pendientes", value: pendientes },
+          { label: "Confirmadas", value: confirmadas },
+        ]);
+
+        // --- 3️⃣ Servicios más usados ---
+        const serviciosMasUsadosData: ServicioMasUsado[] = Object.entries(serviceReservationsTypeCount).map(
+          ([nombre, usos]) => ({
+            nombre,
+            usos: Number(usos), // 👈 convertimos a número explícitamente
+          })
+        );
+        setServiciosMasUsados(serviciosMasUsadosData);
+
+        // --- 4️⃣ Servicios de interés ---
+        const serviciosInteresData: ServicioInteres[] = personsHistogram.frequencies.map(
+          (interesados: number, i: number) => ({
+            nombre: meses[i],
+            interesados,
+          })
+        );
+        setServiciosInteres(serviciosInteresData);
+      } catch (error) {
+        console.error("Error cargando los datos del dashboard:", error);
+      }
+    };
+
+    fetchDashboardData();
+  }, []);
+
   return (
     <div className="grid gap-6 md:grid-cols-2">
+      {/* --- Reservas mensuales --- */}
       <Card>
         <SectionTitle title="Reservas mensuales" subtitle="Histograma (total por mes)" />
         <div className="w-full" style={chartBox}>
@@ -355,6 +422,7 @@ function DashboardPage() {
         </div>
       </Card>
 
+      {/* --- Estado actual --- */}
       <Card>
         <SectionTitle title="Pendientes vs Confirmadas" subtitle="Estado actual" />
         <div className="w-full" style={chartBox}>
@@ -371,6 +439,7 @@ function DashboardPage() {
         </div>
       </Card>
 
+      {/* --- Servicios más usados --- */}
       <Card>
         <SectionTitle title="Servicios más usados / mensuales" />
         <div className="w-full" style={chartBox}>
@@ -387,6 +456,7 @@ function DashboardPage() {
         </div>
       </Card>
 
+      {/* --- Servicios de interés --- */}
       <Card>
         <SectionTitle title="Servicios de interés" subtitle="Encuestas / solicitudes" />
         <div className="w-full" style={chartBox}>
