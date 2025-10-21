@@ -294,6 +294,30 @@ function ReservationFullDetail({ data, onClose }: { data: ApiReservationFull; on
           {data.personReservations.length === 0 && <p style={{ color: colors.subtext }}>No hay personas registradas.</p>}
         </div>
       </Card>
+
+      <Card>
+        <h4 className="font-semibold mb-2">Servicios asociados</h4>
+        <div className="space-y-3">
+          {data.serviceReservations.map((sr: any) => (
+            <div key={sr.id} className="border rounded-lg p-3 flex justify-between items-center" style={{ borderColor: colors.stroke }}>
+              <div>
+                <p className="font-medium">{sr.service?.type || 'Servicio'}</p>
+                <p className="text-sm" style={{ color: colors.subtext }}>Fecha: {formatDate(sr.orderDate)}</p>
+              </div>
+              <div className="text-right">
+                <p className="font-medium">Cantidad: {sr.costCount}</p>
+                <p className="text-sm" style={{ color: colors.subtext }}>Precio unit.: ${sr.service?.price ?? 0}</p>
+                <p className="text-sm font-semibold">Total: ${((sr.service?.price ?? 0) * (sr.costCount ?? 0)).toFixed(2)}</p>
+              </div>
+            </div>
+          ))}
+          {data.serviceReservations.length === 0 && <p style={{ color: colors.subtext }}>No hay servicios asociados.</p>}
+
+          <div className="pt-2 border-t mt-2" style={{ borderColor: colors.stroke }}>
+            <p className="font-semibold">Total servicios: ${data.serviceReservations.reduce((sum: number, sr: any) => sum + ((sr.service?.price ?? 0) * (sr.costCount ?? 0)), 0).toFixed(2)}</p>
+          </div>
+        </div>
+      </Card>
     </div>
   );
 }
