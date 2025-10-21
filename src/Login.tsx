@@ -25,7 +25,14 @@ const Login: React.FC = () => {
                 { email, password }
             );
 
-            console.log("Login exitoso:", response.data);
+
+            // store token in localStorage (prefer idToken if provided, fallback to accessToken)
+            const token = (response.data && (response.data.idToken || response.data.accessToken)) || null;
+            if (token) {
+                localStorage.setItem('auth_token', token);
+                // also set axios default header for immediate subsequent requests
+                axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+            }
 
             navigate("/admin");
         } catch (err: unknown) {
