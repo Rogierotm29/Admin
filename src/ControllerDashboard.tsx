@@ -7,6 +7,8 @@ export const dashboardService = {
     getPersonsHistogram,
     getReservationsStateCount,
     getReservations,
+    getReservationById,
+    updateReservationState,
     getServiceReservationsTypeCount,
 };
 
@@ -76,6 +78,29 @@ async function getReservations(): Promise<ReservationsResponse> {
         return response.data;
     } catch (error) {
         console.error("Error fetching reservations:", error);
+        throw error;
+    }
+}
+
+async function getReservationById(id: string): Promise<any> {
+    try {
+        const response = await axios.get(`${API_URL.replace('/dashboard', '')}/reservations/${id}`);
+        console.log("Fetched reservation by id:", response.data);
+        return response.data;
+    } catch (error) {
+        console.error("Error fetching reservation by id:", error);
+        throw error;
+    }
+}
+
+async function updateReservationState(id: string, state: string): Promise<any> {
+    try {
+        const base = API_URL.replace('/dashboard', '');
+        const response = await axios.put(`${base}/reservations/${id}`, { state });
+        console.log(`Updated reservation ${id} => ${state}`, response.data);
+        return response.data;
+    } catch (error) {
+        console.error(`Error updating reservation ${id}:`, error);
         throw error;
     }
 }

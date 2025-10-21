@@ -87,10 +87,11 @@ function Button(
 }
 
 /* ===== 1) Página Reservas ===== */
-function ReservasPage({ defaultList = "pendientes", initialPendingList = [], initialConfirmedList = [] }:
-  { defaultList?: "pendientes" | "confirmadas"; initialPendingList?: Reserva[]; initialConfirmedList?: Reserva[] }) {
+function ReservasPage({ defaultList = "pendientes", initialPendingList = [], initialConfirmedList = [], onViewDetails, onFinalize }:
+  { defaultList?: "pendientes" | "confirmadas"; initialPendingList?: Reserva[]; initialConfirmedList?: Reserva[]; onViewDetails?: (id: string) => void; onFinalize?: (id: string) => Promise<void> }) {
   const [pending, setPending] = useState<Reserva[]>(initialPendingList);
   const [confirmed, setConfirmed] = useState<Reserva[]>(initialConfirmedList);
+  const [updatingIds, setUpdatingIds] = useState<Record<string, boolean>>({});
   const [active, setActive] = useState<"pendientes" | "confirmadas">(defaultList);
   const [detalle, setDetalle] = useState<null | { tipo: "P" | "C"; id: string }>(null);
 
@@ -100,16 +101,76 @@ function ReservasPage({ defaultList = "pendientes", initialPendingList = [], ini
   const lista = active === "pendientes" ? pending : confirmed;
 
   function aceptar(id: string) {
+    // optimistically update UI after successful API call
     const res = pending.find(r => r.id === id);
     if (!res) return;
-    setPending(prev => prev.filter(r => r.id !== id));
-    setConfirmed(prev => [{ ...res }, ...prev]);
-    setActive("confirmadas");
-    setDetalle({ tipo: "C", id: res.id });
+    // call API to set ACTIVE
+    (async () => {
+      try {
+        setUpdatingIds(s => ({ ...s, [id]: true }));
+        await dashboardService.updateReservationState(id, "ACTIVE");
+        // move to confirmed list
+        setPending(prev => prev.filter(r => r.id !== id));
+        setConfirmed(prev => [{ ...res }, ...prev]);
+        setActive("confirmadas");
+        setDetalle({ tipo: "C", id: res.id });
+      } catch (err) {
+        console.error(err);
+        // TODO: show a toast or error message
+      } finally {
+        setUpdatingIds(s => {
+          const copy = { ...s };
+          delete copy[id];
+          return copy;
+        });
+      }
+    })();
   }
   function rechazar(id: string) {
-    setPending(prev => prev.filter(r => r.id !== id));
-    setDetalle(null);
+    const res = pending.find(r => r.id === id);
+    if (!res) return;
+    (async () => {
+      try {
+        setUpdatingIds(s => ({ ...s, [id]: true }));
+        await dashboardService.updateReservationState(id, "CANCELLED");
+        // On cancel, remove from pending and clear detail selection.
+        // We DO NOT move cancelled reservations to the confirmed list.
+        setPending(prev => prev.filter(r => r.id !== id));
+        setDetalle(null);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setUpdatingIds(s => {
+          const copy = { ...s };
+          delete copy[id];
+          return copy;
+        });
+      }
+    })();
+  }
+
+  // finalize a confirmed reservation (default: set state to COMPLETED)
+  async function finalizar(id: string) {
+    const res = confirmed.find(r => r.id === id);
+    if (!res) return;
+    setUpdatingIds(s => ({ ...s, [id]: true }));
+    try {
+      if (onFinalize) {
+        await onFinalize(id);
+      } else {
+        await dashboardService.updateReservationState(id, "INACTIVE");
+      }
+      // remove from confirmed list after finalizing
+      setConfirmed(prev => prev.filter(r => r.id !== id));
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setUpdatingIds(s => {
+        const copy = { ...s };
+        delete copy[id];
+        return copy;
+      });
+    }
   }
 
   const detalleReserva = useMemo(() => {
@@ -152,12 +213,17 @@ function ReservasPage({ defaultList = "pendientes", initialPendingList = [], ini
                   <div className="flex gap-2">
                     {active === "pendientes" ? (
                       <>
-                        <Button className="whitespace-nowrap" tone="warning" onClick={() => setDetalle({ tipo: "P", id: r.id })}>Detalles</Button>
+                        <Button className="whitespace-nowrap" tone="warning" onClick={() => (onViewDetails ? onViewDetails(r.id) : setDetalle({ tipo: "P", id: r.id }))}>Detalles</Button>
                         <Button className="whitespace-nowrap" tone="accent" onClick={() => aceptar(r.id)}>Aceptar</Button>
                         <Button className="whitespace-nowrap" tone="ghost" onClick={() => rechazar(r.id)}>Rechazar</Button>
                       </>
                     ) : (
-                      <Button className="whitespace-nowrap" tone="accent" onClick={() => setDetalle({ tipo: "C", id: r.id })}>Ver detalles</Button>
+                      <div className="flex items-center gap-2">
+                        <Button className="whitespace-nowrap" tone="accent" onClick={() => (onViewDetails ? onViewDetails(r.id) : setDetalle({ tipo: "C", id: r.id }))}>Ver detalles</Button>
+                        <Button className="whitespace-nowrap" tone="primary" onClick={() => finalizar(r.id)}>
+                          {updatingIds[r.id] ? "Finalizando..." : "Finalizar"}
+                        </Button>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -168,117 +234,66 @@ function ReservasPage({ defaultList = "pendientes", initialPendingList = [], ini
         </Card>
       </div>
 
-      {/* Detalle */}
-      <div className="space-y-4">
-        <SectionTitle title="Detalle de la reservación" subtitle="Gestiona personas y servicios" />
-        <Card>
-          {!detalleReserva ? (
-            <p style={{ color: colors.subtext }}>Selecciona una reserva para ver y editar sus detalles.</p>
-          ) : (
-            <ReservaDetalle
-              data={detalleReserva}
-              onUpdate={(upd) => {
-                if (detalle?.tipo === "P") setPending(p => p.map(x => x.id === upd.id ? upd : x));
-                else setConfirmed(c => c.map(x => x.id === upd.id ? upd : x));
-              }}
-            />
-          )}
-        </Card>
-      </div>
+
     </div>
   );
 }
 
-function ReservaDetalle({ data, onUpdate }: { data: Reserva; onUpdate: (d: Reserva) => void }) {
-  const [personas, setPersonas] = useState<string[]>(
-    Array.from({ length: Math.max(1, data.personas) }).map((_, i) => data?.nombres?.[i] || `Persona ${i + 1}`)
-  );
-  const [servicios, setServicios] = useState<Servicio[]>(data.servicios || []);
 
-  function addPersona() { setPersonas(p => [...p, `Persona ${p.length + 1}`]); }
-  function removePersona(i: number) { setPersonas(p => p.filter((_, idx) => idx !== i)); }
+/* ===== Detalle completo desde API ===== */
+type ApiUser = { id: string; firstName: string; lastName: string; phoneNumber?: string };
+type ApiHostel = { id: string; name: string; description?: string; price?: number; maxCapacity?: number; locationUrl?: string; imageUrls?: string[] };
+type ApiPerson = { id: string; firstName: string; lastName: string; birthDate?: string; alergies?: string[]; discapacities?: string[]; medicines?: string[] };
+type ApiPersonReservation = { id: string; person: ApiPerson };
+type ApiReservationFull = {
+  id: string;
+  user: ApiUser;
+  hostel: ApiHostel;
+  startDate: string;
+  endDate: string | null;
+  state: string;
+  personReservations: ApiPersonReservation[];
+  serviceReservations: any[];
+};
 
-  function addServicio() { setServicios(s => [...s, { id: "", nombre: "", cantidad: 1 }]); }
-  function removeServicio(i: number) { setServicios(s => s.filter((_, idx) => idx !== i)); }
-
-  function changeServicioId(i: number, value: string) {
-    setServicios(s => s.map((sv, idx) => idx === i
-      ? { ...sv, id: value, nombre: catalogoServicios.find(c => c.id === value)?.nombre || sv.nombre }
-      : sv));
-  }
-  function changeServicioQty(i: number, value: number) {
-    setServicios(s => s.map((sv, idx) => idx === i ? { ...sv, cantidad: value } : sv));
-  }
-
-  function save() {
-    onUpdate({ ...data, personas: personas.length, nombres: personas, servicios });
-  }
-
+function ReservationFullDetail({ data, onClose }: { data: ApiReservationFull; onClose?: () => void }) {
   return (
-    <div className="space-y-6">
-      {/* Cabecera + botón guardar */}
-      <div className="grid gap-4 md:grid-cols-[1fr,auto]">
+    <div className="space-y-4">
+      <div className="flex justify-between items-start">
         <div>
-          <h3 className="font-semibold mb-1">{data.nombre}</h3>
-          <p className="text-sm" style={{ color: colors.subtext }}>
-            {formatDate(data.rango.inicio)} – {formatDate(data.rango.fin)}
-          </p>
+          <h3 className="font-semibold mb-1">Reserva: {data.id}</h3>
+          <p style={{ color: colors.subtext }}>{data.hostel?.name} · {data.user?.firstName} {data.user?.lastName}</p>
+          <p className="text-sm" style={{ color: colors.subtext }}>{formatDate(data.startDate)} – {formatDate(data.endDate)}</p>
+          <p className="text-sm" style={{ color: colors.subtext }}>Estado: {data.state}</p>
         </div>
-        <div className="flex items-start md:items-end justify-end gap-2">
-          <Button tone="primary" onClick={save}>Guardar cambios</Button>
-        </div>
-      </div>
-
-      {/* Personas (arriba) */}
-      <div>
-        <SectionTitle title="Personas" subtitle="Añade o elimina asistentes" />
-        <div className="space-y-2">
-          {personas.map((p, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <input
-                value={p}
-                onChange={e => setPersonas(arr => arr.map((x, idx) => idx === i ? e.target.value : x))}
-                className="flex-1 rounded-lg px-3 py-2 text-sm bg-transparent border"
-                style={{ borderColor: colors.stroke, color: colors.text }}
-              />
-              <Button tone="ghost" onClick={() => removePersona(i)}>−</Button>
-            </div>
-          ))}
-          <Button tone="ghost" onClick={addPersona}>Agregar persona</Button>
+        <div className="flex items-center gap-2">
+          {onClose && <Button tone="ghost" onClick={onClose}>Cerrar</Button>}
         </div>
       </div>
 
-      {/* Servicios (abajo) */}
-      <div>
-        <SectionTitle title="Servicios de la reservación" subtitle="Selecciona y asigna cantidades" />
+      {/* Images intentionally not rendered */}
+
+      <Card>
+        <h4 className="font-semibold mb-2">Información del usuario</h4>
+        <p>{data.user.firstName} {data.user.lastName}</p>
+        {data.user.phoneNumber && <p style={{ color: colors.subtext }}>{data.user.phoneNumber}</p>}
+      </Card>
+
+      <Card>
+        <h4 className="font-semibold mb-2">Personas en la reserva</h4>
         <div className="space-y-3">
-          {servicios.map((sv, i) => (
-            <div key={i} className="grid grid-cols-12 gap-2">
-              <select
-                className="col-span-7 rounded-lg px-3 py-2 text-sm bg-transparent border"
-                style={{ borderColor: colors.stroke, color: colors.text }}
-                value={sv.id}
-                onChange={e => changeServicioId(i, e.target.value)}
-              >
-                <option value="" disabled style={{ color: "#000" }}>Selecciona servicio</option>
-                {catalogoServicios.map(c => (
-                  <option key={c.id} value={c.id} style={{ color: "#000" }}>{c.nombre}</option>
-                ))}
-              </select>
-              <input
-                type="number"
-                min={1}
-                className="col-span-3 rounded-lg px-3 py-2 text-sm bg-transparent border"
-                style={{ borderColor: colors.stroke, color: colors.text }}
-                value={sv.cantidad}
-                onChange={e => changeServicioQty(i, Number(e.target.value))}
-              />
-              <Button className="col-span-2 whitespace-nowrap" tone="ghost" onClick={() => removeServicio(i)}>Eliminar</Button>
+          {data.personReservations.map(pr => (
+            <div key={pr.id} className="border rounded-lg p-3" style={{ borderColor: colors.stroke }}>
+              <p className="font-medium">{pr.person.firstName} {pr.person.lastName}</p>
+              <p className="text-sm" style={{ color: colors.subtext }}>Nacimiento: {formatDate(pr.person.birthDate)}</p>
+              {!!pr.person.alergies?.length && <p className="text-sm" style={{ color: colors.subtext }}>Alergias: {pr.person.alergies.join(", ")}</p>}
+              {!!pr.person.discapacities?.length && <p className="text-sm" style={{ color: colors.subtext }}>Discapacidades: {pr.person.discapacities.join(", ")}</p>}
+              {!!pr.person.medicines?.length && <p className="text-sm" style={{ color: colors.subtext }}>Medicinas: {pr.person.medicines.join(", ")}</p>}
             </div>
           ))}
-          <Button tone="ghost" onClick={addServicio}>Agregar servicio</Button>
+          {data.personReservations.length === 0 && <p style={{ color: colors.subtext }}>No hay personas registradas.</p>}
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
@@ -455,16 +470,12 @@ function DashboardPage() {
   );
 }
 
-/* ===== 3) Página Confirmadas ===== */
-function ConfirmadasPage() {
-  return <ReservasPage defaultList="confirmadas" />;
-}
+// Confirmadas page removed per request — use Reservas with defaultList="confirmadas" if needed elsewhere
 
 /* ===== Shell / Layout ===== */
 const tabs = [
   { key: "dashboard", label: "Dashboard" },
   { key: "reservas", label: "Reservas" },
-  { key: "confirmadas", label: "Confirmadas" },
 ] as const;
 type TabKey = typeof tabs[number]["key"];
 
@@ -474,6 +485,9 @@ export default function AdminCaritasApp() {
   const [confirmedFromApi, setConfirmedFromApi] = useState<Reserva[]>([]);
   const [loadingReservations, setLoadingReservations] = useState<boolean>(false);
   const [reservationsError, setReservationsError] = useState<string | null>(null);
+  const [fullReservation, setFullReservation] = useState<ApiReservationFull | null>(null);
+  const [loadingFullReservation, setLoadingFullReservation] = useState<boolean>(false);
+  const [fullReservationError, setFullReservationError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -505,6 +519,21 @@ export default function AdminCaritasApp() {
     load();
     return () => { mounted = false; };
   }, []);
+
+  const viewDetails = async (id: string) => {
+    setFullReservation(null);
+    setFullReservationError(null);
+    setLoadingFullReservation(true);
+    try {
+      const res = await dashboardService.getReservationById(id);
+      setFullReservation(res as ApiReservationFull);
+    } catch (err) {
+      console.error(err);
+      setFullReservationError("No se pudo cargar el detalle de la reserva");
+    } finally {
+      setLoadingFullReservation(false);
+    }
+  };
 
   return (
     <div style={{ background: colors.bg, minHeight: "100vh" }}>
@@ -542,11 +571,29 @@ export default function AdminCaritasApp() {
             ) : reservationsError ? (
               <Card><p style={{ color: colors.subtext }}>{reservationsError}</p></Card>
             ) : (
-              <ReservasPage initialPendingList={pendingFromApi} initialConfirmedList={confirmedFromApi} />
+              <div className="grid gap-6 md:grid-cols-[520px,1fr] xl:grid-cols-[580px,1fr]">
+                <div>
+                  <ReservasPage initialPendingList={pendingFromApi} initialConfirmedList={confirmedFromApi} onViewDetails={viewDetails} />
+                </div>
+                <div className="space-y-4">
+                  <SectionTitle title="Detalle de la reservación" subtitle="Gestiona personas y servicios" />
+                  <Card>
+                    {loadingFullReservation ? (
+                      <p style={{ color: colors.subtext }}>Cargando detalle...</p>
+                    ) : fullReservationError ? (
+                      <p style={{ color: colors.subtext }}>{fullReservationError}</p>
+                    ) : fullReservation ? (
+                      <ReservationFullDetail data={fullReservation} onClose={() => setFullReservation(null)} />
+                    ) : (
+                      <p style={{ color: colors.subtext }}>Selecciona una reserva para ver y editar sus detalles.</p>
+                    )}
+                  </Card>
+                </div>
+              </div>
             )}
           </>
         )}
-        {tab === "confirmadas" && <ConfirmadasPage />}
+        {/* Confirmadas tab removed */}
       </main>
 
       <footer className="border-t mt-8 px-4 py-6 text-xs" style={{ borderColor: colors.stroke, color: colors.subtext }}>
@@ -555,3 +602,4 @@ export default function AdminCaritasApp() {
     </div>
   );
 }
+
