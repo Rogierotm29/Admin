@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, Legend
 } from "recharts";
@@ -33,13 +33,7 @@ type Reserva = {
 // Start empty; we'll load from API
 // we'll pass initial lists via props from the top-level component
 
-const catalogoServicios = [
-  { id: "s1", nombre: "Lavandería" },
-  { id: "s2", nombre: "Transporte" },
-  { id: "s3", nombre: "Comedor" },
-  { id: "s4", nombre: "Trabajo Social" },
-  { id: "s5", nombre: "Albergue" },
-];
+
 
 /* ===== Utils UI ===== */
 function clsx(...tokens: Array<string | false | null | undefined>) {
@@ -93,7 +87,6 @@ function ReservasPage({ defaultList = "pendientes", initialPendingList = [], ini
   const [confirmed, setConfirmed] = useState<Reserva[]>(initialConfirmedList);
   const [updatingIds, setUpdatingIds] = useState<Record<string, boolean>>({});
   const [active, setActive] = useState<"pendientes" | "confirmadas">(defaultList);
-  const [detalle, setDetalle] = useState<null | { tipo: "P" | "C"; id: string }>(null);
 
   // sincroniza si cambiamos de pestaña (prop)
   useEffect(() => { setActive(defaultList); }, [defaultList]);
@@ -113,7 +106,7 @@ function ReservasPage({ defaultList = "pendientes", initialPendingList = [], ini
         setPending(prev => prev.filter(r => r.id !== id));
         setConfirmed(prev => [{ ...res }, ...prev]);
         setActive("confirmadas");
-        setDetalle({ tipo: "C", id: res.id });
+        onViewDetails?.(res.id);
       } catch (err) {
         console.error(err);
         // TODO: show a toast or error message
@@ -136,7 +129,6 @@ function ReservasPage({ defaultList = "pendientes", initialPendingList = [], ini
         // On cancel, remove from pending and clear detail selection.
         // We DO NOT move cancelled reservations to the confirmed list.
         setPending(prev => prev.filter(r => r.id !== id));
-        setDetalle(null);
       } catch (err) {
         console.error(err);
       } finally {
@@ -173,11 +165,7 @@ function ReservasPage({ defaultList = "pendientes", initialPendingList = [], ini
     }
   }
 
-  const detalleReserva = useMemo(() => {
-    if (!detalle) return null;
-    const src = detalle.tipo === "P" ? pending : confirmed;
-    return src.find(r => r.id === detalle.id) || null;
-  }, [detalle, pending, confirmed]);
+
 
   return (
     <div
@@ -213,13 +201,13 @@ function ReservasPage({ defaultList = "pendientes", initialPendingList = [], ini
                   <div className="flex gap-2">
                     {active === "pendientes" ? (
                       <>
-                        <Button className="whitespace-nowrap" tone="warning" onClick={() => (onViewDetails ? onViewDetails(r.id) : setDetalle({ tipo: "P", id: r.id }))}>Detalles</Button>
+                        <Button className="whitespace-nowrap" tone="warning" onClick={() => onViewDetails?.(r.id)}>Detalles</Button>
                         <Button className="whitespace-nowrap" tone="accent" onClick={() => aceptar(r.id)}>Aceptar</Button>
                         <Button className="whitespace-nowrap" tone="ghost" onClick={() => rechazar(r.id)}>Rechazar</Button>
                       </>
                     ) : (
                       <div className="flex items-center gap-2">
-                        <Button className="whitespace-nowrap" tone="accent" onClick={() => (onViewDetails ? onViewDetails(r.id) : setDetalle({ tipo: "C", id: r.id }))}>Ver detalles</Button>
+                        <Button className="whitespace-nowrap" tone="accent" onClick={() => onViewDetails?.(r.id)}>Ver detalles</Button>
                         <Button className="whitespace-nowrap" tone="primary" onClick={() => finalizar(r.id)}>
                           {updatingIds[r.id] ? "Finalizando..." : "Finalizar"}
                         </Button>
